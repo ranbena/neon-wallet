@@ -1,9 +1,8 @@
 // @flow
 import { api, rpc } from 'neon-js'
-import { extend } from 'lodash'
+import { extend, isEmpty } from 'lodash'
 import { createActions } from 'spunky'
 
-import { toBigNumber } from '../core/math'
 import { ASSETS } from '../core/constants'
 import { COIN_DECIMAL_LENGTH } from '../core/formatters'
 
@@ -17,44 +16,31 @@ export const ID = 'DASHBOARD'
 
 async function getBalances (endpoint: string, { net, address, tokens }: Props) {
   // token balances
-  const promises = tokens.map(async token => {
-    const { scriptHash } = token
+  const tokenBalances = await api.nep5.getTokenBalances(endpoint, tokens.map(token => token.scriptHash), address)
 
-    try {
-      const response = await api.nep5.getToken(endpoint, scriptHash, address)
-      const balance = toBigNumber(response.balance || 0)
-        .round(response.decimals)
-        .toString()
-
+  const parsedTokenBalances = Object.keys(tokenBalances).map(tokenKey => {
+    const foundToken = tokens.find(token => token.symbol === tokenKey)
+    if (foundToken && tokenBalances[tokenKey]) {
       return {
-        [scriptHash]: { ...response, scriptHash, balance }
+        [foundToken.scriptHash]: {...foundToken, balance: tokenBalances[tokenKey]}
       }
-    } catch (err) {
-      // invalid scriptHash
-      return {}
-    }
-  })
+    } else return {}
+  }).filter(tokenBalance => !isEmpty(tokenBalance))
 
   // asset balances
-  promises.push(
-    (async () => {
-      const assetBalances = await api.getBalanceFrom(
-        { net, address },
-        api.neoscan
-      )
-      const { assets } = assetBalances.balance
-
-      // The API doesn't always return NEO or GAS keys if, for example, the address only has one asset
-      const neoBalance = assets.NEO ? assets.NEO.balance.toString() : '0'
-      const gasBalance = assets.GAS
-        ? assets.GAS.balance.round(COIN_DECIMAL_LENGTH).toString()
-        : '0'
-
-      return { [ASSETS.NEO]: neoBalance, [ASSETS.GAS]: gasBalance }
-    })()
+  const assetBalances = await api.getBalanceFrom(
+    { net, address },
+    api.neoscan
   )
-
-  return extend({}, ...(await Promise.all(promises)))
+  const { assets } = assetBalances.balance
+  // The API doesn't always return NEO or GAS keys if, for example, the address only has one asset
+  const neoBalance = assets.NEO ? assets.NEO.balance.toString() : '0'
+  const gasBalance = assets.GAS
+    ? assets.GAS.balance.round(COIN_DECIMAL_LENGTH).toString()
+    : '0'
+  const parsedAssets = [{[ASSETS.NEO]: neoBalance}, {[ASSETS.GAS]: gasBalance}]
+  // $FlowFixMe
+  return extend({}, ...parsedTokenBalances, ...parsedAssets)
 }
 
 export default createActions(
