@@ -2,6 +2,7 @@ import React from 'react'
 import thunk from 'redux-thunk'
 import configureStore from 'redux-mock-store'
 import { Provider } from 'react-redux'
+import poll from '../app/util/poll'
 
 export const createStore = configureStore([thunk])
 
@@ -27,3 +28,17 @@ export const mockPromiseRejected = (message = 'test error') =>
       reject(new Error(message))
     })
   })
+
+export const waitForElement = async (
+  wrapper,
+  selector,
+  config = { attempts: 10, frequency: 200 }
+) => {
+  const findElement = async () => {
+    const element = wrapper.update().find(selector)
+    return element.length
+      ? Promise.resolve(element.get(0))
+      : Promise.reject('Element not found')
+  }
+  return poll(findElement, config)
+}
