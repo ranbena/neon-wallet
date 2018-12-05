@@ -66,10 +66,27 @@ $navigation-margin: 20px;
   display: flex;
   justify-content: center;
   min-height: 150px;
+  position: relative;
   video {
     min-width: 350px;
     margin-top: -40px;
     margin-bottom: 12px;
+  }
+  .error {
+    color: #ced0d4;
+    text-align: center;
+    .heading svg {
+      vertical-align: middle;
+      position: relative;
+      top: -2px;
+      path {
+        fill: #ced0d4;
+      }
+    }
+    .desc {
+      font-size: 14px;
+      padding: 10px 50px 0;
+    }
   }
 }
 

@@ -1,23 +1,33 @@
 // @flow
-import React from 'react'
+import React, { Fragment } from 'react'
 import Instascan from 'instascan'
 
 import Button from '../../components/Button'
 import PasswordInput from '../../components/Inputs/PasswordInput/PasswordInput'
+import Loading from '../App/Loading'
 import LoginIcon from '../../assets/icons/login.svg'
 import GridIcon from '../../assets/icons/grid.svg'
 import Close from '../../assets/icons/close.svg'
+import ErrorIcon from '../../assets/icons/error.svg'
+import { ConditionalLink } from '../../util/ConditionalLink'
 import styles from '../Home/Home.scss'
+
+type ScannerError = {
+  message: string,
+  details?: React$Element<*>
+}
 
 type Props = {
   loginWithPrivateKey: Function,
-  cameraAvailable: boolean
+  cameraAvailable: boolean,
+  theme: string
 }
 
 type State = {
   wif: string,
   scannerActive: boolean,
-  loading: boolean
+  loading: boolean,
+  error: ?ScannerError
 }
 
 export default class LoginPrivateKey extends React.Component<Props, State> {
@@ -28,7 +38,8 @@ export default class LoginPrivateKey extends React.Component<Props, State> {
   state = {
     wif: '',
     scannerActive: false,
-    loading: false
+    loading: false,
+    error: null
   }
 
   componentWillUnmount() {
@@ -50,12 +61,8 @@ export default class LoginPrivateKey extends React.Component<Props, State> {
           {scannerActive ? (
             <React.Fragment>
               <div className={styles.scannerContainer}>
-                {/* eslint-disable-next-line */}
-                <video
-                  ref={ref => {
-                    this.scanPreviewElement = ref
-                  }}
-                />
+                {this.renderLoadingIndicator()}
+                {this.renderScanner()}
               </div>
               <div className={styles.privateKeyLoginButtonRowScannerActive}>
                 <Button
@@ -68,7 +75,7 @@ export default class LoginPrivateKey extends React.Component<Props, State> {
               </div>
             </React.Fragment>
           ) : (
-            <React.Fragment>
+            <Fragment>
               <div className={styles.centeredInput}>
                 <PasswordInput
                   placeholder="Enter your private key here"
@@ -99,7 +106,7 @@ export default class LoginPrivateKey extends React.Component<Props, State> {
                   Login
                 </Button>
               </div>
-            </React.Fragment>
+            </Fragment>
           )}
         </form>
       </div>
@@ -118,6 +125,7 @@ export default class LoginPrivateKey extends React.Component<Props, State> {
 
   stopScanner() {
     if (this.scannerInstance) this.scannerInstance.stop()
+    this.setState({ error: null }) // clear error
   }
 
   startScanner() {
@@ -131,17 +139,91 @@ export default class LoginPrivateKey extends React.Component<Props, State> {
     })
 
     this.setState({ loading: true })
-    Instascan.Camera.getCameras()
-      .then((cameras: Array<Object>) => {
-        this.setState(prevState => ({
-          loading: prevState.loading
-        }))
-        if (cameras.length > 0) {
-          this.scannerInstance.start(cameras[0])
-        } else {
-          console.error('No cameras found.')
+
+    // since the browser halts while getting usermedia
+    // let the loading animation finish one round and only then continue
+    new Promise(resolve => setTimeout(resolve, 900))
+      .then(() => Instascan.Camera.getCameras())
+      .then((cams: Array<Object>) => {
+        if (cams.length === 0) {
+          // shouldn't happen, case covered by withCameraAvailability
+          throw new Error()
         }
+        return this.scannerInstance.start(cams[0])
       })
-      .catch(e => console.error(e))
+      .catch(err => {
+        this.setState({ error: this.constructor.getScannerError(err) })
+      })
+      .finally(() => {
+        this.setState({ loading: false })
+      })
+  }
+
+  static getScannerError(err: Error) {
+    const scanErr: ScannerError = {
+      message: 'Could not connect to camera'
+    }
+
+    if (err.name === 'TrackStartError') {
+      // get link info by user os, defaults to nothing
+      const [link, title] =
+        {
+          darwin: [
+            'https://support.apple.com/en-il/guide/mac-help/mh32356/10.14/mac',
+            'MacOS User Guide: Change Privacy preferences'
+          ],
+          win32: [
+            'https://support.microsoft.com/en-ca/help/10557/windows-10-app-permissions',
+            'Windows Support: App permissions'
+          ],
+          linux: [
+            'https://wiki.ubuntu.com/SecurityPermissions',
+            'Ubuntu Wiki: Security Permissions'
+          ]
+        }[process.platform] || []
+
+      scanErr.details = (
+        <div>
+          Make sure your camera is not already in use by another program and
+          that{' '}
+          <ConditionalLink href={link} tooltip={title} target="_blank">
+            camera access
+          </ConditionalLink>{' '}
+          is granted to Neon.
+        </div>
+      )
+    }
+    return scanErr
+  }
+
+  renderLoadingIndicator(): ?React$Element<'div'> {
+    const { theme } = this.props
+    const { loading } = this.state
+
+    return loading ? Loading({ theme }) : null
+  }
+
+  renderScanner(): React$Element<*> {
+    const { error } = this.state
+
+    if (error) {
+      return (
+        <div className={styles.error}>
+          <div className={styles.heading}>
+            <ErrorIcon /> {error.message}
+          </div>
+          <div className={styles.desc}>{error.details}</div>
+        </div>
+      )
+    }
+
+    return (
+      /* eslint-disable-next-line jsx-a11y/media-has-caption */
+      <video
+        ref={ref => {
+          this.scanPreviewElement = ref
+        }}
+      />
+    )
   }
 }
