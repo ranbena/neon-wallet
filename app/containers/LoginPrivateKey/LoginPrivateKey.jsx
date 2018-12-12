@@ -44,7 +44,11 @@ export default class LoginPrivateKey extends React.Component<Props, State> {
           {scannerActive ? (
             <React.Fragment>
               <div className={styles.scannerContainer}>
-                <QrCodeScanner callback={loginWithPrivateKey} />
+                <QrCodeScanner
+                  callback={loginWithPrivateKey}
+                  width={350}
+                  height={150}
+                />
               </div>
               <div className={styles.privateKeyLoginButtonRowScannerActive}>
                 <Button

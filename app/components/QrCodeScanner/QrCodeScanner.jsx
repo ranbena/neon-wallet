@@ -1,13 +1,16 @@
 // @flow
 import React, { Component, Fragment } from 'react'
-import Instascan from 'instascan'
+import jsqr from 'jsqr'
 import { get } from 'lodash-es'
 
-import Loading, { ANIMATION_DURATION } from '../../containers/App/Loading'
+import Loading from '../../containers/App/Loading'
 import { ConditionalLink } from '../../util/ConditionalLink'
 import ErrorIcon from '../../assets/icons/error.svg'
 
 import styles from './QrCodeScanner.scss'
+
+// const SCANNER_INTERVAL = 500
+const PAUSE_DURATION = 4000
 
 type ScannerError = {
   message: string,
@@ -15,7 +18,9 @@ type ScannerError = {
 }
 
 type Props = {
-  callback: (content: string, scannerInstance: any) => any,
+  callback: (content: string, stopScanner: Function) => any,
+  width: number,
+  height: number,
   theme: string
 }
 
@@ -30,51 +35,94 @@ export default class QrCodeScanner extends Component<Props, State> {
     error: null
   }
 
-  scanPreviewElement: ?HTMLVideoElement
+  video: ?HTMLVideoElement
 
-  scannerInstance: Instascan
+  canvas: ?HTMLCanvasElement
+
+  canvasCtx: CanvasRenderingContext2D
+
+  stream: ?MediaStream
+
+  rafId: ?AnimationFrameID
+
+  pauseTimeoutId: ?TimeoutID
 
   componentDidMount() {
-    this.startScanner()
+    const { canvas } = this
+    if (canvas) {
+      this.canvasCtx = canvas.getContext('2d')
+
+      this.setState({ loading: true }, async () => {
+        await this.startScanner()
+        this.setState({ loading: false })
+      })
+    }
   }
 
   componentWillUnmount() {
     this.stopScanner()
   }
 
-  startScanner() {
-    const { callback } = this.props
-    this.scannerInstance = new Instascan.Scanner({
-      video: this.scanPreviewElement
-    })
-
-    this.scannerInstance.addListener('scan', content => {
-      callback(content, this.stopScanner.bind(this))
-    })
-
-    // since the browser halts while getting usermedia
-    // let the loading animation finish one round and only then continue
-    this.setState({ loading: true })
-    new Promise(resolve => setTimeout(resolve, ANIMATION_DURATION))
-      .then(() => Instascan.Camera.getCameras())
-      .then((cameras: Array<Object>) => {
-        if (!cameras.length) {
-          // shouldn't happen, case covered by withCameraAvailability
-          throw new Error('No cameras found.')
-        }
-        return this.scannerInstance.start(cameras[0])
+  async startScanner() {
+    const { video } = this
+    if (video) {
+      // injects a stream from first camera to <video>
+      this.stream = await navigator.mediaDevices.getUserMedia({
+        video: true
       })
-      .catch(err => {
-        this.setState({ error: this.constructor.getScannerError(err) })
-      })
-      .finally(() => {
-        this.setState({ loading: false })
-      })
+      video.srcObject = this.stream
+      video.play()
+      this.rafId = requestAnimationFrame(this.tick.bind(this))
+    }
   }
 
   stopScanner() {
-    if (this.scannerInstance) this.scannerInstance.stop()
-    this.setState({ error: null }) // clear error
+    // cancel scan
+    window.cancelAnimationFrame(this.rafId)
+    // cancel pause
+    window.clearTimeout(this.pauseTimeoutId)
+    // stop stream
+    if (this.stream) {
+      this.stream.getTracks().forEach(trk => trk.stop())
+    }
+  }
+
+  tick() {
+    const { video } = this
+    const { callback } = this.props
+    if (video) {
+      // skip till video ready
+      if (video.readyState !== video.HAVE_ENOUGH_DATA) {
+        this.rafId = requestAnimationFrame(this.tick.bind(this))
+      }
+
+      // capture and scan image
+      const { width: w, height: h } = this.props
+      this.canvasCtx.drawImage(video, 0, 0, w, h)
+      const { data, height, width } = this.canvasCtx.getImageData(0, 0, w, h)
+      const result = jsqr(data, width, height, {
+        inversionAttempts: 'dontInvert' // don't check white on black
+      })
+
+      if (result) {
+        // pause scan and execute callback
+        this.pause()
+        callback(result.data, this.stopScanner)
+      } else {
+        // continue
+        this.rafId = requestAnimationFrame(this.tick.bind(this))
+      }
+    }
+  }
+
+  pause() {
+    // this.setState({ loading: true })
+    this.pauseTimeoutId = setTimeout(() => this.resume(), PAUSE_DURATION)
+  }
+
+  resume() {
+    // this.setState({ loading: false })
+    requestAnimationFrame(this.tick.bind(this))
   }
 
   static getScannerError(err: Error) {
@@ -143,13 +191,26 @@ export default class QrCodeScanner extends Component<Props, State> {
       )
     }
 
+    const { width, height } = this.props
     return (
-      /* eslint-disable-next-line jsx-a11y/media-has-caption */
-      <video
-        ref={ref => {
-          this.scanPreviewElement = ref
-        }}
-      />
+      <Fragment>
+        {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+        <video
+          ref={el => {
+            this.video = el
+          }}
+          width={width}
+          height={height}
+        />
+        <canvas
+          hidden
+          ref={el => {
+            this.canvas = el
+          }}
+          width={width}
+          height={height}
+        />
+      </Fragment>
     )
   }
 }
