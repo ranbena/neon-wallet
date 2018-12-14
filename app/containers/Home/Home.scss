@@ -65,13 +65,10 @@ $navigation-margin: 20px;
 .scannerContainer {
   display: flex;
   justify-content: center;
+  margin-bottom: 25px;
+  margin-top: -30px;
   min-height: 150px;
   position: relative;
-  video {
-    min-width: 350px;
-    margin-top: -30px;
-    position: absolute;
-  }
 }
 
 .ledgerStage {
