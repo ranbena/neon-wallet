@@ -1,6 +1,9 @@
+@import '../../styles/animations';
+
 .error {
   color: var(--input-label);
   text-align: center;
+  margin-top: 20px;
   .heading svg {
     vertical-align: middle;
     position: relative;
@@ -15,22 +18,11 @@
   }
 }
 canvas {
-  transform: scaleX(-1)
-}
-canvas.active {
-  animation: pulse 2s infinite;
-}
-canvas.paused {
-  box-shadow: 0 0 0 6px #{'rgba(var(--qr-scan-primary-rgb),0.5)'};
-}
-@keyframes pulse {
-  0% {
-    box-shadow: 0 0 0 0 #{'rgba(var(--qr-scan-primary-rgb),0.6)'};
+  transform: scaleX(-1); // mirror image
+  &.active {
+    animation: pulse 2s infinite;
   }
-  70% {
-      box-shadow: 0 0 0 10px #{'rgba(var(--qr-scan-primary-rgb),0)'};
-  }
-  100% {
-      box-shadow: 0 0 0 0 #{'rgba(var(--qr-scan-primary-rgb),0)'};
+  &.paused {
+    box-shadow: 0 0 0 6px #{'rgba(var(--qr-scan-primary-rgb),0.5)'};
   }
 }
