@@ -135,6 +135,12 @@ const SEND = {
   '--send-success-row-info': '#cccccc'
 }
 
+const QR_SCANNER = {
+  '--qr-scan-primary': '#66ED87',
+  '--qr-scan-secondary': '#FFF',
+  '--qr-scan-primary-rgb': '102, 237, 135'
+}
+
 export default {
   ...CONTACTS,
   ...AMOUNTS_PANEL,
@@ -151,5 +157,6 @@ export default {
   ...HEADER_BAR,
   ...TX_LIST,
   ...SETTINGS,
-  ...SEND
+  ...SEND,
+  ...QR_SCANNER
 }

@@ -2,17 +2,20 @@
 import React, { Component, Fragment } from 'react'
 import jsqr from 'jsqr'
 import { get } from 'lodash-es'
+import { type ProgressState, progressValues } from 'spunky'
 
 import Loading from '../../containers/App/Loading'
 import { ConditionalLink } from '../../util/ConditionalLink'
 import ErrorIcon from '../../assets/icons/error.svg'
 
 import styles from './QrCodeScanner.scss'
+import themes from '../../themes'
 
-const PAUSE_DURATION = 4000
+const PAUSE_DELAY = 2000
 const JSQR_OPTIONS = {
   inversionAttempts: 'dontInvert' // don't check white on black
 }
+const { FAILED, LOADING } = progressValues
 
 type ScannerError = {
   message: string,
@@ -33,7 +36,8 @@ type jsqr$Code = {
 }
 
 type Props = {
-  callback: (content: string, stopScanner: Function) => any,
+  callback: (content: string) => any,
+  callbackProgress: ProgressState,
   width: number,
   height: number,
   theme: string
@@ -58,7 +62,7 @@ const log = (msg, reset) => {
 
 export default class QrCodeScanner extends Component<Props, State> {
   state = {
-    loading: false,
+    loading: true,
     paused: false,
     error: null
   }
@@ -73,22 +77,36 @@ export default class QrCodeScanner extends Component<Props, State> {
 
   rafId: ?AnimationFrameID
 
-  pauseTimeoutId: ?TimeoutID
+  animTimeoutId: ?TimeoutID
 
-  marchTimeoutId: ?TimeoutID
+  primaryColor: string
 
-  componentDidMount() {
-    const { canvas } = this
+  secondaryColor: string
+
+  async componentDidMount() {
+    const {
+      canvas,
+      props: { theme }
+    } = this
+
+    this.primaryColor = themes[theme]['--qr-scan-primary']
+    this.secondaryColor = themes[theme]['--qr-scan-secondary']
+
     if (canvas) {
       this.canvasCtx = canvas.getContext('2d')
+      await this.startScanner()
+      this.setState({ loading: false })
+    }
+  }
 
-      log('start loading', true)
-      this.setState({ loading: true }, async () => {
-        log('startScanner')
-        await this.startScanner()
-        log('stop loading')
-        this.setState({ loading: false })
-      })
+  componentDidUpdate(prevProps: Props) {
+    // resume if callback progressed from LOADING to FAILED
+    if (
+      this.state.paused &&
+      this.props.callbackProgress === FAILED &&
+      prevProps.callbackProgress === LOADING
+    ) {
+      this.resume()
     }
   }
 
@@ -114,9 +132,8 @@ export default class QrCodeScanner extends Component<Props, State> {
   stopScanner() {
     // cancel scan
     window.cancelAnimationFrame(this.rafId)
-    // cancel pause and march
-    window.clearTimeout(this.pauseTimeoutId)
-    window.clearTimeout(this.marchTimeoutId)
+    // cancel animation
+    window.clearTimeout(this.animTimeoutId)
     // stop stream
     if (this.stream) {
       this.stream.getTracks().forEach(trk => trk.stop())
@@ -126,15 +143,18 @@ export default class QrCodeScanner extends Component<Props, State> {
   scan() {
     const { video } = this
     if (video) {
-      // wait till video ready
       if (video.readyState === video.HAVE_ENOUGH_DATA) {
         // capture and scan image
         const { width: w, height: h } = this.props
         this.canvasCtx.drawImage(video, 0, 0, w, h)
-        const { data, height, width } = this.canvasCtx.getImageData(0, 0, w, h)
-        const code = jsqr(data, width, height, JSQR_OPTIONS)
+        const { data, width, height } = this.canvasCtx.getImageData(0, 0, w, h)
+        const code: jsqr$Code = jsqr(data, width, height, JSQR_OPTIONS)
+
+        // qr code found
         if (code) {
-          this.snap(code)
+          this.setState({ paused: true })
+          this.edgeEffect(code.location)
+          setTimeout(() => this.props.callback(code.data), PAUSE_DELAY)
         } else {
           this.rafId = requestAnimationFrame(this.scan.bind(this))
         }
@@ -144,18 +164,7 @@ export default class QrCodeScanner extends Component<Props, State> {
     }
   }
 
-  snap(code: jsqr$Code) {
-    // pause
-    this.pause()
-
-    // visual effect
-    this.drawLines(code.location)
-
-    // send to parent
-    this.props.callback(code.data, this.stopScanner)
-  }
-
-  drawLines(loc: jsqr$Location) {
+  edgeEffect(loc: jsqr$Location) {
     const {
       topLeftCorner: tl,
       topRightCorner: tr,
@@ -175,23 +184,18 @@ export default class QrCodeScanner extends Component<Props, State> {
     // glow
     this.canvasCtx.setLineDash([])
     this.canvasCtx.lineWidth = 10
-    this.canvasCtx.shadowBlur = 60
-    this.canvasCtx.shadowColor = '#66ED87'
-    this.canvasCtx.strokeStyle = '#66ED87'
+    this.canvasCtx.strokeStyle = this.primaryColor
     this.canvasCtx.stroke(path)
 
     // marching ants
-    this.march(path, 0)
+    this.edgeAnimate(path, 0)
   }
 
-  march(path: Path2D, passedOffset: number) {
+  edgeAnimate(path: Path2D, passedOffset: number) {
     // base line color
-
     this.canvasCtx.lineWidth = 3
     this.canvasCtx.setLineDash([])
-    this.canvasCtx.shadowColor = ''
-    this.canvasCtx.shadowBlur = 0
-    this.canvasCtx.strokeStyle = '#66ED87'
+    this.canvasCtx.strokeStyle = this.primaryColor
     this.canvasCtx.stroke(path)
 
     // calculate animation line offset
@@ -202,21 +206,17 @@ export default class QrCodeScanner extends Component<Props, State> {
 
     // style it
     this.canvasCtx.setLineDash([3, 3])
-    this.canvasCtx.strokeStyle = 'white'
+    this.canvasCtx.strokeStyle = this.secondaryColor
     this.canvasCtx.lineDashOffset = -offset
     this.canvasCtx.stroke(path)
 
-    this.marchTimeoutId = setTimeout(() => this.march(path, offset), 20)
-  }
-
-  pause() {
-    this.setState({ paused: true })
-    this.pauseTimeoutId = setTimeout(() => this.resume(), PAUSE_DURATION)
+    // start animation
+    this.animTimeoutId = setTimeout(() => this.edgeAnimate(path, offset), 20)
   }
 
   resume() {
     this.setState({ paused: false })
-    window.clearTimeout(this.marchTimeoutId)
+    window.clearTimeout(this.animTimeoutId) // stop animation
     this.scan()
   }
 
@@ -304,8 +304,8 @@ export default class QrCodeScanner extends Component<Props, State> {
           }}
           width={width}
           height={height}
+          className={paused ? styles.paused : styles.active}
         />
-        {paused ? <div className={styles.paused} /> : null}
       </Fragment>
     )
   }
