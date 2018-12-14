@@ -1,6 +1,7 @@
 // @flow
 import React from 'react'
 import classNames from 'classnames'
+import { type ProgressState } from 'spunky'
 
 import GridIcon from 'assets/icons/grid.svg'
 import CozDonationQrCode from 'assets/images/coz-donation-qr-code.png'
@@ -11,7 +12,8 @@ import baseStyles from '../SendModal.scss'
 import styles from './ReadCode.scss'
 
 type Props = {
-  gotoNextStep: (content: string, stopScanner: Function) => void,
+  callback: (content: string) => void,
+  callbackProgress: ProgressState,
   cameraAvailable: boolean
 }
 
@@ -29,10 +31,12 @@ export default class ReadCode extends React.Component<Props, State> {
   }
 
   getScanner = () => {
+    const { callback, callbackProgress } = this.props
     if (this.state.scannerActive) {
       return (
         <QrCodeScanner
-          callback={this.props.gotoNextStep}
+          callback={callback}
+          callbackProgress={callbackProgress}
           height={260}
           width={350}
         />
