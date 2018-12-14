@@ -83,7 +83,7 @@ export default class QrCodeScanner extends Component<Props, State> {
 
   secondaryColor: string
 
-  async componentDidMount() {
+  componentDidMount() {
     const {
       canvas,
       props: { theme }
@@ -94,8 +94,7 @@ export default class QrCodeScanner extends Component<Props, State> {
 
     if (canvas) {
       this.canvasCtx = canvas.getContext('2d')
-      await this.startScanner()
-      this.setState({ loading: false })
+      this.startScanner()
     }
   }
 
@@ -114,18 +113,26 @@ export default class QrCodeScanner extends Component<Props, State> {
     this.stopScanner()
   }
 
-  async startScanner() {
+  startScanner() {
     const { video } = this
     if (video) {
       // injects a stream from first camera to <video>
-      this.stream = await navigator.mediaDevices.getUserMedia({
-        video: true
-      })
-      video.srcObject = this.stream
-      video.play()
-
-      // start scanning
-      this.scan()
+      navigator.mediaDevices
+        .getUserMedia({
+          video: true
+        })
+        .then(stream => {
+          this.stream = stream
+          video.srcObject = stream
+          video.play()
+          this.scan()
+        })
+        .catch(err => {
+          this.setState({ error: this.constructor.getScannerError(err) })
+        })
+        .finally(() => {
+          this.setState({ loading: false })
+        })
     }
   }
 
@@ -145,7 +152,7 @@ export default class QrCodeScanner extends Component<Props, State> {
     if (video) {
       if (video.readyState === video.HAVE_ENOUGH_DATA) {
         // capture and scan image
-        const { width: w, height: h } = this.props
+        const { width: w, height: h, callback } = this.props
         this.canvasCtx.drawImage(video, 0, 0, w, h)
         const { data, width, height } = this.canvasCtx.getImageData(0, 0, w, h)
         const code: jsqr$Code = jsqr(data, width, height, JSQR_OPTIONS)
@@ -154,7 +161,7 @@ export default class QrCodeScanner extends Component<Props, State> {
         if (code) {
           this.setState({ paused: true })
           this.edgeEffect(code.location)
-          setTimeout(() => this.props.callback(code.data), PAUSE_DELAY)
+          setTimeout(() => callback(code.data), PAUSE_DELAY)
         } else {
           this.rafId = requestAnimationFrame(this.scan.bind(this))
         }
