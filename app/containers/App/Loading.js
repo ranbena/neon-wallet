@@ -9,13 +9,13 @@ import styles from './Loading.scss'
 export const ANIMATION_DURATION = 900 // one animation round in ms
 
 type Props = {
-  theme: ThemeType,
-  nobackground?: boolean
+  className?: string,
+  theme: ThemeType
 }
 
 export default function Loading(props: Props) {
-  const { theme, nobackground: nobg } = props
-  const className = classNames(styles.loading, { [styles.nobackground]: nobg })
+  const { theme, className: additional } = props
+  const className = classNames(styles.loading, additional)
 
   return (
     <div style={themes[theme]} className={className}>

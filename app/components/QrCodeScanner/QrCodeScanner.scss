@@ -17,12 +17,47 @@
     padding: 10px 50px 0;
   }
 }
+
+.loading {
+  background-color: transparent;
+  position: absolute;
+  z-index: 1;
+}
+
 canvas {
   transform: scaleX(-1); // mirror image
-  &.active {
-    animation: pulse 2s infinite;
+  object-fit: contain;
+}
+
+.overlay {
+  height: 100%;
+  object-fit: contain;
+  position: absolute;
+  transition: background-color 1s ease-out;
+  fill: var(--qr-scan-secondary);
+  animation: pulsate 2s infinite;
+  top: 0;
+  width: 100%;
+
+  &[data-active=true] {
+    fill: var(--qr-scan-primary);
+    animation: flash 500ms ease-out;
   }
-  &.paused {
-    box-shadow: 0 0 0 6px #{'rgba(var(--qr-scan-primary-rgb),0.5)'};
+}
+@keyframes flash {
+  10% {
+    background-color: rgba(255,255,255,0.8);
+  }
+  from, to {
+    background-color: rgba(255,255,255,0);
+  }
+}
+
+@keyframes pulsate {
+  70% {
+    opacity: 0.6;
+  }
+  from, to {
+    opacity: 0;
   }
 }

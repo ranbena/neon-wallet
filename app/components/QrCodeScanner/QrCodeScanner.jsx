@@ -1,12 +1,13 @@
 // @flow
 import React, { Component, Fragment } from 'react'
 import jsqr from 'jsqr'
-import { get } from 'lodash-es'
+import { get, assign } from 'lodash-es'
 import { type ProgressState, progressValues } from 'spunky'
 
 import Loading from '../../containers/App/Loading'
 import { ConditionalLink } from '../../util/ConditionalLink'
 import ErrorIcon from '../../assets/icons/error.svg'
+import Overlay from '../../assets/images/qr-marker.svg'
 
 import styles from './QrCodeScanner.scss'
 import themes from '../../themes'
@@ -22,24 +23,9 @@ type ScannerError = {
   details?: React$Element<*>
 }
 
-// won't be needed when we use TS
-type jsqr$Point = { x: number, y: number }
-type jsqr$Location = {
-  topRightCorner: jsqr$Point,
-  topLeftCorner: jsqr$Point,
-  bottomRightCorner: jsqr$Point,
-  bottomLeftCorner: jsqr$Point
-}
-type jsqr$Code = {
-  data: string,
-  location: jsqr$Location
-}
-
 type Props = {
   callback: (content: string) => any,
   callbackProgress: ProgressState,
-  width: number,
-  height: number,
   theme: string
 }
 
@@ -49,17 +35,6 @@ type State = {
   error: ?ScannerError
 }
 
-let time = Date.now()
-
-const log = (msg, reset) => {
-  const now = Date.now()
-  if (reset) {
-    time = now
-  }
-  console.log(`${now - time} : ${msg}`)
-  time = now
-}
-
 export default class QrCodeScanner extends Component<Props, State> {
   state = {
     loading: true,
@@ -67,7 +42,7 @@ export default class QrCodeScanner extends Component<Props, State> {
     error: null
   }
 
-  video: ?HTMLVideoElement
+  video: HTMLVideoElement = document.createElement('video')
 
   canvas: ?HTMLCanvasElement
 
@@ -83,11 +58,11 @@ export default class QrCodeScanner extends Component<Props, State> {
 
   secondaryColor: string
 
+  dimensions: { width: number, height: number }
+
   componentDidMount() {
-    const {
-      canvas,
-      props: { theme }
-    } = this
+    const { canvas, props } = this
+    const { theme } = props
 
     this.primaryColor = themes[theme]['--qr-scan-primary']
     this.secondaryColor = themes[theme]['--qr-scan-secondary']
@@ -114,26 +89,22 @@ export default class QrCodeScanner extends Component<Props, State> {
   }
 
   startScanner() {
-    const { video } = this
-    if (video) {
-      // injects a stream from first camera to <video>
-      navigator.mediaDevices
-        .getUserMedia({
-          video: true
-        })
-        .then(stream => {
-          this.stream = stream
-          video.srcObject = stream
-          video.play()
-          this.scan()
-        })
-        .catch(err => {
-          this.setState({ error: this.constructor.getScannerError(err) })
-        })
-        .finally(() => {
-          this.setState({ loading: false })
-        })
-    }
+    navigator.mediaDevices
+      .getUserMedia({
+        video: true
+      })
+      .then(stream => {
+        this.stream = stream // stored for later stopping
+        this.video.srcObject = stream
+        this.video.play()
+        this.scan()
+      })
+      .catch(err => {
+        this.setState({ error: this.constructor.getScannerError(err) })
+      })
+      .finally(() => {
+        this.setState({ loading: false })
+      })
   }
 
   stopScanner() {
@@ -148,77 +119,39 @@ export default class QrCodeScanner extends Component<Props, State> {
   }
 
   scan() {
-    const { video } = this
-    if (video) {
-      if (video.readyState === video.HAVE_ENOUGH_DATA) {
-        // capture and scan image
-        const { width: w, height: h, callback } = this.props
-        this.canvasCtx.drawImage(video, 0, 0, w, h)
-        const { data, width, height } = this.canvasCtx.getImageData(0, 0, w, h)
-        const code: jsqr$Code = jsqr(data, width, height, JSQR_OPTIONS)
+    if (this.video.readyState === this.video.HAVE_ENOUGH_DATA) {
+      const { width: w, height: h } = this.dimensions
 
-        // qr code found
-        if (code) {
-          this.setState({ paused: true })
-          this.edgeEffect(code.location)
-          setTimeout(() => callback(code.data), PAUSE_DELAY)
-        } else {
-          this.rafId = requestAnimationFrame(this.scan.bind(this))
-        }
+      // capture and scan image
+      this.canvasCtx.drawImage(this.video, 0, 0, w, h)
+      const { data, width, height } = this.canvasCtx.getImageData(0, 0, w, h)
+      const code: { data: string } = jsqr(data, width, height, JSQR_OPTIONS)
+
+      // qr code found
+      if (code) {
+        this.setState({ paused: true })
+        setTimeout(() => this.props.callback(code.data), PAUSE_DELAY)
       } else {
         this.rafId = requestAnimationFrame(this.scan.bind(this))
       }
+    } else {
+      this.rafId = requestAnimationFrame(this.scan.bind(this))
     }
   }
 
-  edgeEffect(loc: jsqr$Location) {
-    const {
-      topLeftCorner: tl,
-      topRightCorner: tr,
-      bottomRightCorner: br,
-      bottomLeftCorner: bl
-    } = loc
-
-    // create path around qr code
-    const path = new Path2D()
-    path.moveTo(tl.x, tl.y)
-    path.lineTo(tr.x, tr.y)
-    path.lineTo(br.x, br.y)
-    path.lineTo(bl.x, bl.y)
-    path.lineTo(tl.x, tl.y)
-    path.closePath()
-
-    // glow
-    this.canvasCtx.setLineDash([])
-    this.canvasCtx.lineWidth = 10
-    this.canvasCtx.strokeStyle = this.primaryColor
-    this.canvasCtx.stroke(path)
-
-    // marching ants
-    this.edgeAnimate(path, 0)
-  }
-
-  edgeAnimate(path: Path2D, passedOffset: number) {
-    // base line color
-    this.canvasCtx.lineWidth = 3
-    this.canvasCtx.setLineDash([])
-    this.canvasCtx.strokeStyle = this.primaryColor
-    this.canvasCtx.stroke(path)
-
-    // calculate animation line offset
-    let offset = passedOffset + 1
-    if (offset > 6) {
-      offset = 0
+  get dimensions() {
+    // get from video
+    const dimensions = {
+      width: this.video.videoWidth,
+      height: this.video.videoHeight
     }
+    // set to canvas
+    assign(this.canvas, dimensions)
 
-    // style it
-    this.canvasCtx.setLineDash([3, 3])
-    this.canvasCtx.strokeStyle = this.secondaryColor
-    this.canvasCtx.lineDashOffset = -offset
-    this.canvasCtx.stroke(path)
+    // memoize
+    Object.defineProperty(this, 'dimensions', { value: dimensions })
 
-    // start animation
-    this.animTimeoutId = setTimeout(() => this.edgeAnimate(path, offset), 20)
+    return dimensions
   }
 
   resume() {
@@ -275,9 +208,11 @@ export default class QrCodeScanner extends Component<Props, State> {
 
   renderLoadingIndicator() {
     const { theme } = this.props
-    const { loading } = this.state
+    const { loading, paused } = this.state
 
-    return loading ? <Loading theme={theme} nobackground /> : null
+    return loading || paused ? (
+      <Loading className={styles.loading} theme={theme} />
+    ) : null
   }
 
   renderScanner() {
@@ -293,26 +228,14 @@ export default class QrCodeScanner extends Component<Props, State> {
       )
     }
 
-    const { width, height } = this.props
     return (
       <Fragment>
-        {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-        <video
-          hidden
-          ref={el => {
-            this.video = el
-          }}
-          width={width}
-          height={height}
-        />
         <canvas
           ref={el => {
             this.canvas = el
           }}
-          width={width}
-          height={height}
-          className={paused ? styles.paused : styles.active}
         />
+        <Overlay className={styles.overlay} data-active={paused} />
       </Fragment>
     )
   }

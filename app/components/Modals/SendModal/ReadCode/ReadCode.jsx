@@ -1,5 +1,5 @@
 // @flow
-import React from 'react'
+import React, { Fragment } from 'react'
 import classNames from 'classnames'
 import { type ProgressState } from 'spunky'
 
@@ -31,19 +31,27 @@ export default class ReadCode extends React.Component<Props, State> {
   }
 
   getScanner = () => {
-    const { callback, callbackProgress } = this.props
     if (this.state.scannerActive) {
+      const { callback, callbackProgress } = this.props
       return (
         <QrCodeScanner
           callback={callback}
           callbackProgress={callbackProgress}
-          height={260}
           width={350}
+          height={218}
         />
       )
     }
 
-    return <img src={CozDonationQrCode} alt="coz-donation-qr-code.png" />
+    return (
+      <Fragment>
+        <div className={styles.frameLineTopRight} />
+        <div className={styles.frameLineTopLeft} />
+        <div className={styles.frameLineBottomRight} />
+        <div className={styles.frameLineBottomLeft} />
+        <img src={CozDonationQrCode} alt="coz-donation-qr-code.png" />
+      </Fragment>
+    )
   }
 
   render() {
@@ -75,10 +83,6 @@ export default class ReadCode extends React.Component<Props, State> {
             )}
           >
             <div className={styles.qrCodeScannerPlaceholder}>
-              <div className="frameLineTopLeft" />
-              <div className="frameLineTopRight" />
-              <div className="frameLineBottomLeft" />
-              <div className="frameLineBottomRight" />
               {this.getScanner()}
             </div>
           </div>

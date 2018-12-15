@@ -137,8 +137,7 @@ const SEND = {
 
 const QR_SCANNER = {
   '--qr-scan-primary': '#66ED87',
-  '--qr-scan-secondary': '#FFF',
-  '--qr-scan-primary-rgb': '102, 237, 135'
+  '--qr-scan-secondary': '#FFF'
 }
 
 export default {
